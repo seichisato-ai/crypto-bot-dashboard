@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d1117">
+<title>crypto-bot</title>
+<style>
+  :root {
+    --bg: #0d1117; --card: #161b22; --line: #21262d;
+    --text: #e6edf3; --muted: #8b949e; --dim: #484f58;
+    --accent: #3fb68b; --accent-dim: #1f4537;
+    --red: #f47067; --amber: #d4a72c;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
+    font-feature-settings: "tnum";
+    max-width: 480px; margin: 0 auto; padding: 16px 16px 40px;
+  }
+  h1 { font-size: 17px; font-weight: 600; letter-spacing: .02em; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-top: 12px; }
+  .row { display: flex; align-items: center; gap: 8px; }
+  .spread { justify-content: space-between; }
+  .badge { font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 999px; letter-spacing: .05em; }
+  .badge.paper { background: #1c2d45; color: #79b8ff; }
+  .badge.live  { background: #3d1d1d; color: var(--red); }
+  .badge.paused{ background: #3a2d10; color: var(--amber); }
+  .badge.long  { background: var(--accent-dim); color: var(--accent); }
+  .badge.flat  { background: #21262d; color: var(--muted); }
+  .muted { color: var(--muted); font-size: 12px; }
+  .big { font-size: 34px; font-weight: 700; letter-spacing: -.01em; }
+  .delta { font-size: 14px; font-weight: 600; }
+  .pos { color: var(--accent); } .neg { color: var(--red); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+  .cell { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+  .cell .v { font-size: 16px; font-weight: 600; margin-top: 2px; }
+  button {
+    font: inherit; border: 1px solid var(--line); background: #21262d; color: var(--text);
+    border-radius: 10px; padding: 11px 0; width: 100%; font-weight: 600; cursor: pointer;
+  }
+  button:active { transform: scale(.98); }
+  button.danger { background: #2d1617; border-color: #5d2a2c; color: var(--red); }
+  button.ghost { background: transparent; }
+  button:disabled { opacity: .45; cursor: default; }
+  .btnrow { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+  .iconbtn { width: 34px; height: 34px; padding: 0; border-radius: 9px; font-size: 16px; flex: none; }
+  svg { display: block; width: 100%; }
+  .legend { display: flex; gap: 14px; margin-top: 8px; }
+  .legend span { font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 5px; }
+  .key { display: inline-block; width: 14px; height: 0; border-top: 2px solid var(--accent); }
+  .key.bh { border-top: 2px dashed var(--dim); }
+  /* locked params */
+  .locked { position: relative; opacity: .75; }
+  .locked .lockpill {
+    position: absolute; top: 14px; right: 14px; font-size: 11px; font-weight: 600;
+    color: var(--amber); background: #3a2d1080; border: 1px solid #5d4a1f;
+    padding: 3px 9px; border-radius: 999px;
+  }
+  .param { display: flex; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid var(--line); }
+  .param:last-of-type { border-bottom: none; }
+  .param .pv { color: var(--muted); font-weight: 600; }
+  .trade { display: flex; justify-content: space-between; align-items: baseline; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .trade:last-child { border-bottom: none; }
+  .tag { font-size: 10px; padding: 2px 7px; border-radius: 999px; background: #21262d; color: var(--muted); margin-left: 6px; }
+  .tag.emergency { background: #3d1d1d; color: var(--red); }
+  input {
+    font: inherit; width: 100%; background: var(--bg); color: var(--text);
+    border: 1px solid var(--line); border-radius: 10px; padding: 11px 12px; margin-top: 8px;
+  }
+  #toast { font-size: 12px; color: var(--accent); min-height: 18px; margin-top: 10px; text-align: center; }
+  .sec { font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: .08em; margin-bottom: 4px; }
+  footer { margin-top: 18px; text-align: center; }
+  footer button { width: auto; padding: 6px 14px; font-size: 12px; color: var(--muted); }
+  details { margin-top: 10px; font-size: 12px; color: var(--muted); }
+  details li { margin: 4px 0 4px 16px; }
+  code { background: #21262d; padding: 1px 5px; border-radius: 5px; font-size: 11px; }
+</style>
+</head>
+<body>
+
+<div id="setup" hidden>
+  <h1 style="margin-top:24px">crypto-bot ダッシュボード</h1>
+  <div class="card">
+    <p class="muted">bot のリポジトリと、アクセス用トークン(Fine-grained PAT)を入力してください。この端末のブラウザにのみ保存されます。</p>
+    <input id="inRepo" placeholder="リポジトリ (owner/repo)" autocapitalize="off" autocomplete="off">
+    <input id="inToken" placeholder="github_pat_..." type="password" autocomplete="off">
+    <div style="margin-top:10px"><button id="btnSave">接続する</button></div>
+    <details>
+      <summary>トークンの作り方</summary>
+      <li>GitHub → Settings → Developer settings → Fine-grained tokens → Generate new token</li>
+      <li>Repository access: <code>Only select repositories</code> → bot のリポジトリだけを選択</li>
+      <li>Permissions (Repository): <code>Contents: Read-only</code> / <code>Actions: Read and write</code> / <code>Variables: Read and write</code></li>
+      <li>生成された <code>github_pat_...</code> を上に貼り付け</li>
+    </details>
+  </div>
+</div>
+
+<div id="app" hidden>
+  <div class="row spread">
+    <div class="row">
+      <h1>crypto-bot</h1>
+      <span id="bMode" class="badge paper">PAPER</span>
+      <span id="bPaused" class="badge paused" hidden>一時停止中</span>
+    </div>
+    <button id="btnReload" class="iconbtn ghost" title="更新">↻</button>
+  </div>
+
+  <div class="card">
+    <div class="muted">資産</div>
+    <div class="big" id="vEquity">—</div>
+    <div class="delta" id="vDelta"></div>
+  </div>
+
+  <div class="card">
+    <svg id="chart" viewBox="0 0 360 190" preserveAspectRatio="none"></svg>
+    <div class="legend">
+      <span><i class="key"></i>bot</span>
+      <span><i class="key bh"></i>ガチホしていた場合</span>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="cell"><div class="muted">ポジション</div><div class="v"><span id="vPos" class="badge flat">—</span></div></div>
+    <div class="cell"><div class="muted">BTC 価格</div><div class="v" id="vPrice">—</div></div>
+    <div class="cell"><div class="muted">取引回数</div><div class="v" id="vTrades">—</div></div>
+    <div class="cell"><div class="muted">稼働日数</div><div class="v" id="vDays">—</div></div>
+  </div>
+
+  <div class="card">
+    <div class="sec">操作</div>
+    <div class="btnrow">
+      <button id="btnPause">⏸ 一時停止</button>
+      <button id="btnRun">↻ 今すぐチェック</button>
+    </div>
+    <div class="btnrow">
+      <button id="btnMode">paper ⇔ live</button>
+      <button id="btnSell" class="danger">🚨 緊急売却</button>
+    </div>
+    <div id="toast"></div>
+  </div>
+
+  <div class="card locked">
+    <div class="sec">戦略パラメータ</div>
+    <span class="lockpill">🔒 ロック中</span>
+    <div class="param"><span>戦略</span><span class="pv">SMA トレンドフォロー</span></div>
+    <div class="param"><span>SMA 期間</span><span class="pv" id="pSma">—</span></div>
+    <div class="param"><span>判定バンド</span><span class="pv" id="pBand">—</span></div>
+    <div class="param"><span>対象</span><span class="pv">BTC / JPY 現物</span></div>
+    <p class="muted" style="margin-top:10px">誤操作による戦略の破壊を防ぐためロックされています。変更はバックテストとセットで Claude Code から。</p>
+  </div>
+
+  <div class="card">
+    <div class="sec">直近の取引</div>
+    <div id="trades"><p class="muted">まだ取引はありません</p></div>
+  </div>
+
+  <footer>
+    <div class="muted" id="vLastRun"></div>
+    <button id="btnLogout" class="ghost" style="margin-top:8px">トークンを削除して切断</button>
+  </footer>
+</div>
+
+<script>
+"use strict";
+const LS = { token: "cbd_token", repo: "cbd_repo" };
+const $ = id => document.getElementById(id);
+const yen = n => "¥" + Math.round(n).toLocaleString("ja-JP");
+let VARS = {};   // GitHub Actions variables
+let LOG = [];    // daily_log.json
+
+// ---------- GitHub API ----------
+function gh(path, opts = {}) {
+  const repo = localStorage.getItem(LS.repo);
+  return fetch(`https://api.github.com/repos/${repo}${path}`, {
+    ...opts,
+    headers: {
+      Authorization: "Bearer " + localStorage.getItem(LS.token),
+      "X-GitHub-Api-Version": "2022-11-28",
+      ...(opts.headers || {}),
+    },
+  });
+}
+async function ghJson(path) {
+  const r = await gh(path);
+  if (!r.ok) throw new Error(`${r.status} ${path}`);
+  return r.json();
+}
+async function ghFile(path) {  // raw contents of a repo file; [] if missing
+  const r = await gh(`/contents/${path}?ref=main&cb=${Date.now()}`,
+                     { headers: { Accept: "application/vnd.github.raw+json" } });
+  if (r.status === 404) return [];
+  if (!r.ok) throw new Error(`${r.status} ${path}`);
+  return r.json();
+}
+async function setVar(name, value) {
+  const body = JSON.stringify({ name, value: String(value) });
+  let r = await gh(`/actions/variables/${name}`, { method: "PATCH", body });
+  if (r.status === 404) r = await gh(`/actions/variables`, { method: "POST", body });
+  if (!r.ok && r.status !== 204 && r.status !== 201) throw new Error(`変数 ${name} の更新に失敗 (${r.status})`);
+}
+async function dispatchRun(forceFlat) {
+  const r = await gh(`/actions/workflows/bot.yml/dispatches`, {
+    method: "POST",
+    body: JSON.stringify({ ref: "main", inputs: { force_flat: forceFlat ? "true" : "false" } }),
+  });
+  if (r.status !== 204) throw new Error(`実行リクエストに失敗 (${r.status})`);
+}
+
+// ---------- rendering ----------
+function drawChart(log) {
+  const svg = $("chart");
+  svg.innerHTML = "";
+  const W = 360, H = 190, P = { t: 12, r: 6, b: 18, l: 6 };
+  if (log.length < 2) {
+    svg.innerHTML = `<text x="180" y="100" fill="#8b949e" font-size="12" text-anchor="middle">データ蓄積中 — ${log.length}日目 / グラフは2日目から</text>`;
+    return;
+  }
+  const eq = log.map(r => r.equity);
+  const bh = log.map(r => log[0].equity * r.price / log[0].price);
+  const all = eq.concat(bh);
+  const lo = Math.min(...all) * 0.995, hi = Math.max(...all) * 1.005;
+  const x = i => P.l + (W - P.l - P.r) * i / (log.length - 1);
+  const y = v => P.t + (H - P.t - P.b) * (1 - (v - lo) / (hi - lo));
+  const path = a => a.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join("");
+  const ns = "http://www.w3.org/2000/svg";
+  const mk = (tag, attrs) => { const e = document.createElementNS(ns, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; };
+  // baseline = starting equity
+  svg.appendChild(mk("line", { x1: P.l, x2: W - P.r, y1: y(log[0].equity), y2: y(log[0].equity), stroke: "#21262d", "stroke-width": 1 }));
+  svg.appendChild(mk("path", { d: path(bh), fill: "none", stroke: "#484f58", "stroke-width": 1.5, "stroke-dasharray": "4 4" }));
+  svg.appendChild(mk("path", { d: path(eq), fill: "none", stroke: "#3fb68b", "stroke-width": 2 }));
+  const dot = mk("circle", { cx: x(log.length - 1), cy: y(eq[eq.length - 1]), r: 3, fill: "#3fb68b" });
+  svg.appendChild(dot);
+  // x labels: first & last date
+  const lbl = (i, anchor) => { const t = mk("text", { x: x(i), y: H - 4, fill: "#8b949e", "font-size": 10, "text-anchor": anchor }); t.textContent = log[i].date.slice(5); svg.appendChild(t); };
+  lbl(0, "start"); lbl(log.length - 1, "end");
+}
+
+function render(log, trades, vars, lastRun) {
+  VARS = vars; LOG = log;
+  const last = log[log.length - 1];
+  const mode = vars.TRADE_MODE || "paper";
+  const enabled = (vars.BOT_ENABLED || "true") !== "false";
+
+  $("bMode").textContent = mode.toUpperCase();
+  $("bMode").className = "badge " + mode;
+  $("bPaused").hidden = enabled;
+  $("btnPause").textContent = enabled ? "⏸ 一時停止" : "▶ 再開する";
+  $("btnMode").textContent = mode === "paper" ? "live に切り替え" : "paper に戻す";
+  $("pSma").textContent = (vars.SMA_WINDOW || "100") + " 日";
+  $("pBand").textContent = "±" + ((vars.BAND || 0.01) * 100).toFixed(1) + "%";
+
+  if (last) {
+    $("vEquity").textContent = yen(last.equity);
+    const base = log[0].equity;
+    const d = last.equity - base, pct = (d / base) * 100;
+    $("vDelta").textContent = `${d >= 0 ? "+" : ""}${yen(d).replace("¥-", "-¥")} (${d >= 0 ? "+" : ""}${pct.toFixed(2)}%)`;
+    $("vDelta").className = "delta " + (d >= 0 ? "pos" : "neg");
+    $("vPos").textContent = last.position;
+    $("vPos").className = "badge " + last.position.toLowerCase();
+    $("vPrice").textContent = yen(last.price);
+    $("vDays").textContent = log.length + " 日";
+  }
+  $("vTrades").textContent = trades.length + " 回";
+  drawChart(log);
+
+  const box = $("trades");
+  if (trades.length) {
+    box.innerHTML = trades.slice(-5).reverse().map(t => {
+      const dir = t.action.endsWith("LONG") ? "買い" : "売り";
+      const cls = t.reason === "emergency" ? "emergency" : "";
+      const tagTxt = t.reason === "emergency" ? "緊急" : t.mode;
+      return `<div class="trade"><span>${t.time.slice(0, 10)} <b>${dir}</b><span class="tag ${cls}">${tagTxt}</span></span><span class="muted">${yen(t.price)}</span></div>`;
+    }).join("");
+  }
+  if (lastRun) {
+    const ok = lastRun.conclusion === "success" ? "✓" : (lastRun.conclusion || "実行中…");
+    $("vLastRun").textContent = `最終実行: ${new Date(lastRun.run_started_at).toLocaleString("ja-JP")} ${ok}`;
+  }
+}
+
+async function loadAll() {
+  toast("読み込み中…");
+  try {
+    const [log, trades, varsRes, runs] = await Promise.all([
+      ghFile("state/daily_log.json"),
+      ghFile("state/trades.json"),
+      ghJson("/actions/variables?per_page=30").catch(() => ({ variables: [] })),
+      ghJson("/actions/workflows/bot.yml/runs?per_page=1").catch(() => null),
+    ]);
+    const vars = {};
+    for (const v of varsRes.variables || []) vars[v.name] = v.value;
+    render(log, trades, vars, runs && runs.workflow_runs && runs.workflow_runs[0]);
+    toast("");
+  } catch (e) {
+    toast("読み込みエラー: " + e.message, true);
+    if (String(e.message).startsWith("401")) logout();
+  }
+}
+
+function toast(msg, isErr) {
+  const t = $("toast");
+  t.textContent = msg;
+  t.style.color = isErr ? "var(--red)" : "var(--accent)";
+}
+
+// ---------- actions ----------
+async function guard(fn) {
+  try { await fn(); } catch (e) { toast(e.message, true); }
+}
+$("btnPause").onclick = () => guard(async () => {
+  const enabled = (VARS.BOT_ENABLED || "true") !== "false";
+  if (enabled && !confirm("bot を一時停止しますか?\n(毎朝の自動売買がスキップされます。資産はそのまま)")) return;
+  await setVar("BOT_ENABLED", enabled ? "false" : "true");
+  toast(enabled ? "一時停止しました" : "再開しました");
+  loadAll();
+});
+$("btnRun").onclick = () => guard(async () => {
+  await dispatchRun(false);
+  toast("実行をリクエストしました。約1分後に更新ボタンで反映されます");
+});
+$("btnSell").onclick = () => guard(async () => {
+  if (!confirm("🚨 緊急売却\n\n保有中の BTC をすべて売却して現金化し、bot を一時停止します。よろしいですか?")) return;
+  await setVar("BOT_ENABLED", "false");
+  await dispatchRun(true);
+  toast("緊急売却をリクエストしました(bot は一時停止)");
+});
+$("btnMode").onclick = () => guard(async () => {
+  const cur = VARS.TRADE_MODE || "paper";
+  const next = cur === "paper" ? "live" : "paper";
+  const msg = next === "live"
+    ? "⚠️ 実弾運用(live)に切り替えます。\n\nGMO コインの実際の口座資金で売買が行われます。本当によろしいですか?"
+    : "シミュレーション(paper)に戻します。よろしいですか?";
+  if (!confirm(msg)) return;
+  await setVar("TRADE_MODE", next);
+  toast(next + " モードに切り替えました(次回実行から反映)");
+  loadAll();
+});
+$("btnReload").onclick = loadAll;
+
+// ---------- setup / boot ----------
+function logout() {
+  localStorage.removeItem(LS.token);
+  location.reload();
+}
+$("btnLogout").onclick = () => { if (confirm("この端末からトークンを削除しますか?")) logout(); };
+$("btnSave").onclick = () => {
+  const repo = $("inRepo").value.trim(), token = $("inToken").value.trim();
+  if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) { alert("リポジトリは owner/repo の形式で入力してください"); return; }
+  if (!token) { alert("トークンを入力してください"); return; }
+  localStorage.setItem(LS.repo, repo);
+  localStorage.setItem(LS.token, token);
+  location.reload();
+};
+if (localStorage.getItem(LS.token) && localStorage.getItem(LS.repo)) {
+  $("app").hidden = false;
+  loadAll();
+} else {
+  $("setup").hidden = false;
+  if (localStorage.getItem(LS.repo)) $("inRepo").value = localStorage.getItem(LS.repo);
+}
+</script>
+</body>
+</html>
