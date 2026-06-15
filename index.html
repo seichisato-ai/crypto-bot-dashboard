@@ -90,6 +90,36 @@
   details { margin-top: 10px; font-size: 12px; color: var(--muted); }
   details li { margin: 4px 0 4px 16px; }
   code { background: #21262d; padding: 1px 5px; border-radius: 5px; font-size: 11px; }
+  /* strategy comparison (race view) */
+  .champ { border-color: var(--accent); background: linear-gradient(180deg, var(--accent-dim) 0%, var(--card) 55%); }
+  .champpill { display: inline-block; font-size: 11px; font-weight: 600; color: var(--accent);
+    background: #0d111799; border: 1px solid var(--accent-dim); padding: 3px 9px; border-radius: 999px; }
+  .champ .lbl { font-size: 13px; font-weight: 600; margin-top: 8px; }
+  .champ .ret { font-size: 27px; font-weight: 700; line-height: 1.1; margin-top: 4px; }
+  .spark { display: block; }
+  table.lb { width: 100%; border-collapse: collapse; }
+  .lb th { font-size: 10px; color: var(--muted); font-weight: 600; letter-spacing: .03em;
+    padding: 0 0 9px; cursor: pointer; user-select: none; white-space: nowrap; text-align: right; }
+  .lb th.l { text-align: left; }
+  .lb th.active { color: var(--text); }
+  .lb td { padding: 9px 0; border-top: 1px solid var(--line); text-align: right; font-size: 13px; vertical-align: middle; }
+  .lb td.l { text-align: left; }
+  .lb tr.body { cursor: pointer; }
+  .lb tr.body.sel > td { background: #1c2230; }
+  .lb .nm { font-weight: 600; }
+  .lb .swatch { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 7px; vertical-align: middle; background: var(--dim); }
+  .lb .rank { color: var(--muted); width: 18px; }
+  .lb .trophy { color: var(--accent); }
+  .lb tr.detail > td { padding: 0 0 6px; border-top: none; }
+  .detailbox { background: var(--bg); border-radius: 10px; padding: 11px 13px; font-size: 12px; }
+  .detailbox .drow { display: flex; justify-content: space-between; padding: 4px 0; color: var(--muted); }
+  .detailbox .drow b { color: var(--text); font-weight: 600; }
+  .detailbox .rsn { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); line-height: 1.55; color: var(--text); }
+  .scatpt { fill: var(--dim); }
+  .scatlbl { fill: var(--muted); font-size: 9px; }
+  @media (max-width: 432px) {
+    .lb th.opt, .lb td.opt { display: none; }
+  }
 </style>
 </head>
 <body>
@@ -163,6 +193,49 @@
     <div class="cell"><div class="muted">稼働日数</div><div class="v" id="vDays">—</div></div>
     <div class="cell"><div class="muted">取引回数 (SMA / AI)</div><div class="v" id="vTrades">—</div></div>
     <div class="cell"><div class="muted">AI 判断コスト累計</div><div class="v" id="vCost">—</div></div>
+  </div>
+
+  <div id="strat" hidden>
+    <div class="row spread" style="margin-top:18px">
+      <div class="sec" style="margin:0">戦略比較(レース)</div>
+      <span class="muted" id="stratDate"></span>
+    </div>
+
+    <div class="card champ" id="champCard" hidden>
+      <span class="champpill">🏆 本命 · 実弾と同設定</span>
+      <div class="lbl" id="champLbl">—</div>
+      <div class="row spread" style="align-items:flex-end;margin-top:2px">
+        <div>
+          <div class="ret" id="champRet">—</div>
+          <div class="muted" id="champVs" style="margin-top:3px"></div>
+        </div>
+        <svg class="spark" id="champSpark" viewBox="0 0 120 38" preserveAspectRatio="none" style="width:120px;height:38px"></svg>
+      </div>
+      <div class="row" style="gap:7px;margin-top:10px">
+        <span id="champPos" class="badge flat">—</span>
+        <span class="muted" id="champMeta"></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <table class="lb" id="lbTable"></table>
+      <button id="btnShowAll" class="ghost" style="font-size:12px;padding:9px 0;margin-top:10px">すべて表示</button>
+      <p class="muted" style="margin-top:10px;font-size:11px;line-height:1.5">
+        調整後リターン = 売買手数料(0.1%/側)控除後 − LLM トークン代。行をタップで内訳。
+        運用初期は履歴が短く、最大DDは小さめに出ます。</p>
+    </div>
+
+    <details class="card">
+      <summary class="sec" style="cursor:pointer;list-style:none">📈 折れ線で見る (100 基準にリベース)</summary>
+      <svg id="lbChart" viewBox="0 0 360 200" preserveAspectRatio="none" style="margin-top:12px"></svg>
+      <div class="muted" style="font-size:11px;margin-top:8px">行を選ぶと1本だけ色付きで強調。破線グレーは買い持ちの基準線。</div>
+    </details>
+
+    <details class="card">
+      <summary class="sec" style="cursor:pointer;list-style:none">🎯 リスク・リターン散布図</summary>
+      <svg id="lbScatter" viewBox="0 0 360 210" style="margin-top:12px"></svg>
+      <div class="muted" style="font-size:11px;margin-top:8px">x = 最大DD / y = 調整後リターン。左上ほど優秀。</div>
+    </details>
   </div>
 
   <div class="card">
@@ -291,7 +364,7 @@ function fighter(prefix, log) {
   return d;
 }
 
-function render(log, logAi, trades, tradesAi, vars, lastRun) {
+function render(log, logAi, trades, tradesAi, vars, lastRun, leaderboard, logAiRaw) {
   VARS = vars;
   const mode = vars.TRADE_MODE || "paper";
   const enabled = (vars.BOT_ENABLED || "true") !== "false";
@@ -352,22 +425,284 @@ function render(log, logAi, trades, tradesAi, vars, lastRun) {
     const ok = lastRun.conclusion === "success" ? "✓" : (lastRun.conclusion || "実行中…");
     $("vLastRun").textContent = `最終実行: ${new Date(lastRun.run_started_at).toLocaleString("ja-JP")} ${ok}`;
   }
+
+  renderStrategies(leaderboard, logAiRaw);
+}
+
+// ---------- strategy comparison (race view) ----------
+// State for the leaderboard: parsed rows, current sort, expanded/selected row.
+const LB = { models: [], bench: null, series: {}, benchSeries: [],
+             dd: {}, dates: [], showAll: false, sel: null,
+             sortKey: "adj", sortDir: -1, reasons: {} };
+
+// Stable accent per model. Champion = brand green, LLM = purple, other SMA a
+// muted cool→warm ramp by window. These are only shown at full saturation for
+// the champion / the selected row; everyone else renders desaturated (grey)
+// to keep the focus+context discipline (3–4 prominent colours max).
+function modelColor(m) {
+  if (m.is_champion) return "#3fb68b";
+  if (m.kind === "llm") return "#a371f7";
+  const ramp = { sma5: "#58a6ff", sma10: "#56a3d4", sma20: "#5bc8c0",
+                 sma50: "#7ee787", sma100: "#3fb68b", sma200: "#db6d28" };
+  return ramp[m.name] || "#6e7681";
+}
+function maxDD(series) {
+  let peak = -Infinity, dd = 0;
+  for (const v of series) { if (v == null) continue; if (v > peak) peak = v; if (peak > 0) dd = Math.max(dd, 1 - v / peak); }
+  return dd;
+}
+// Build an SVG polyline string for a sparkline / rebased line in a w×h box.
+function linePath(vals, w, h, pad = 2) {
+  const pts = vals.filter(v => v != null);
+  if (pts.length < 2) return "";
+  const lo = Math.min(...pts), hi = Math.max(...pts), span = (hi - lo) || 1;
+  const n = vals.length;
+  let d = "", started = false;
+  vals.forEach((v, i) => {
+    if (v == null) return;
+    const x = (w * i / (n - 1));
+    const y = pad + (h - pad * 2) * (1 - (v - lo) / span);
+    d += `${started ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`;
+    started = true;
+  });
+  return d;
+}
+const NS = "http://www.w3.org/2000/svg";
+const svgEl = (tag, attrs) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; };
+
+function renderStrategies(leaderboard, logAi) {
+  const sec = $("strat");
+  const lb = Array.isArray(leaderboard) ? leaderboard : [];
+  if (lb.length === 0) { sec.hidden = true; return; }
+  sec.hidden = false;
+
+  const last = lb[lb.length - 1];
+  LB.models = (last.models || []).map(m => ({ ...m }));
+  LB.bench = last.benchmark || null;
+  $("stratDate").textContent = last.date || "";
+
+  // Per-model adjusted-equity time series (keyed by stable name) + benchmark.
+  LB.series = {}; LB.dates = lb.map(r => r.date);
+  for (const row of lb)
+    for (const m of (row.models || []))
+      (LB.series[m.name] ||= []).push(m.adjusted_equity != null ? m.adjusted_equity : m.equity);
+  LB.benchSeries = lb.map(r => r.benchmark ? r.benchmark.equity : null);
+  LB.dd = {};
+  for (const m of LB.models) LB.dd[m.name] = maxDD(LB.series[m.name] || []);
+
+  // Latest LLM reasoning for the detail drawer (not present in leaderboard).
+  LB.reasons = {};
+  const aiArr = Array.isArray(logAi) ? logAi : [];
+  const lastAi = aiArr[aiArr.length - 1];
+  if (lastAi) LB.reasons.llm = lastAi.reason || "";
+
+  // Champion card.
+  const champ = LB.models.find(m => m.is_champion);
+  const cc = $("champCard");
+  if (champ) {
+    cc.hidden = false;
+    $("champLbl").textContent = champ.label || champ.name;
+    const r = champ.adjusted_return_pct;
+    $("champRet").textContent = (r >= 0 ? "+" : "") + r.toFixed(2) + "%";
+    $("champRet").className = "ret " + (r >= 0 ? "pos" : "neg");
+    if (LB.bench) {
+      const vs = r - LB.bench.return_pct;
+      $("champVs").textContent = `買い持ち比 ${vs >= 0 ? "+" : ""}${vs.toFixed(2)}pt · 最大DD ${(LB.dd[champ.name] * 100).toFixed(1)}%`;
+    }
+    $("champPos").textContent = champ.position;
+    $("champPos").className = "badge " + String(champ.position || "").toLowerCase();
+    $("champMeta").textContent = champMeta(champ);
+    const sp = $("champSpark"); sp.innerHTML = "";
+    sp.appendChild(svgEl("path", { d: linePath(LB.series[champ.name], 120, 38), fill: "none",
+      stroke: "#3fb68b", "stroke-width": 2, "stroke-linejoin": "round" }));
+  } else { cc.hidden = true; }
+
+  renderLbTable();
+  drawLbChart();
+  drawScatter();
+}
+
+function champMeta(m) {
+  if (m.kind === "sma")
+    return `SMA ${m.window}日 / ±${(m.band * 100).toFixed(1)}% · ${m.trades}取引 · 手数料${yen(m.fees || 0)}`;
+  return `${m.trades}取引 · トークン代${(m.token_cost_jpy || 0).toFixed(1)}円`;
+}
+
+const LB_COLS = [
+  { key: "rank", label: "#", cls: "rank l", opt: false, sortable: false },
+  { key: "name", label: "戦略", cls: "l", opt: false },
+  { key: "spark", label: "", cls: "", opt: false, sortable: false },
+  { key: "adj", label: "調整後", cls: "", opt: false },
+  { key: "dd", label: "最大DD", cls: "opt", opt: true },
+  { key: "vs", label: "vs買い持ち", cls: "opt", opt: true },
+  { key: "trades", label: "売買", cls: "", opt: false },
+  { key: "fees", label: "手数料", cls: "opt", opt: true },
+  { key: "pos", label: "ポジ", cls: "opt", opt: true },
+];
+
+function lbSortVal(m, key) {
+  switch (key) {
+    case "name": return m.name;
+    case "adj": return m.adjusted_return_pct;
+    case "dd": return LB.dd[m.name] || 0;
+    case "vs": return m.adjusted_return_pct - (LB.bench ? LB.bench.return_pct : 0);
+    case "trades": return m.trades || 0;
+    case "fees": return (m.fees || 0) + (m.token_cost_jpy || 0);
+    case "pos": return m.position;
+    default: return 0;
+  }
+}
+
+function renderLbTable() {
+  const sorted = [...LB.models].sort((a, b) => {
+    const va = lbSortVal(a, LB.sortKey), vb = lbSortVal(b, LB.sortKey);
+    if (va < vb) return -LB.sortDir; if (va > vb) return LB.sortDir; return 0;
+  });
+  // Progressive disclosure: champion + buy&hold + top-3 by adjusted return.
+  let visible = sorted;
+  if (!LB.showAll) {
+    const top3 = [...LB.models].sort((a, b) => b.adjusted_return_pct - a.adjusted_return_pct).slice(0, 3);
+    const keep = new Set(top3.map(m => m.name));
+    LB.models.forEach(m => { if (m.is_champion) keep.add(m.name); });
+    visible = sorted.filter(m => keep.has(m.name));
+  }
+
+  const head = "<tr>" + LB_COLS.map(c => {
+    const active = c.sortable !== false && c.key === LB.sortKey;
+    const arrow = active ? (LB.sortDir < 0 ? " ↓" : " ↑") : "";
+    const attr = c.sortable === false ? "" : ` data-k="${c.key}"`;
+    return `<th class="${c.cls}${active ? " active" : ""}"${attr}>${c.label}${arrow}</th>`;
+  }).join("") + "</tr>";
+
+  const rows = visible.map(m => {
+    const sel = LB.sel === m.name;
+    const color = modelColor(m);
+    const r = m.adjusted_return_pct;
+    const vs = r - (LB.bench ? LB.bench.return_pct : 0);
+    // Sparkline: grey by default, coloured only when champion or selected (focus+context).
+    const lit = sel || m.is_champion;
+    const spark = `<svg class="spark" viewBox="0 0 64 22" preserveAspectRatio="none" style="width:64px;height:22px">`
+      + `<path d="${linePath(LB.series[m.name], 64, 22)}" fill="none" stroke="${lit ? color : "#484f58"}" stroke-width="${lit ? 1.6 : 1.2}" stroke-linejoin="round"/></svg>`;
+    const trophy = m.is_champion ? `<span class="trophy">🏆</span> ` : "";
+    const swatch = `<span class="swatch" style="background:${lit ? color : "var(--dim)"}"></span>`;
+    const tr = `<tr class="body${sel ? " sel" : ""}" data-n="${m.name}">`
+      + `<td class="rank l">${visible.indexOf(m) + 1}</td>`
+      + `<td class="l nm">${swatch}${trophy}${m.label || m.name}</td>`
+      + `<td>${spark}</td>`
+      + `<td class="${r >= 0 ? "pos" : "neg"}">${r >= 0 ? "+" : ""}${r.toFixed(2)}%</td>`
+      + `<td class="opt">${(LB.dd[m.name] * 100).toFixed(1)}%</td>`
+      + `<td class="opt ${vs >= 0 ? "pos" : "neg"}">${vs >= 0 ? "+" : ""}${vs.toFixed(2)}</td>`
+      + `<td>${m.trades || 0}</td>`
+      + `<td class="opt muted">${m.kind === "llm" ? (m.token_cost_jpy || 0).toFixed(1) + "円" : yen(m.fees || 0)}</td>`
+      + `<td class="opt"><span class="badge ${String(m.position || "").toLowerCase()}">${m.position}</span></td>`
+      + `</tr>`;
+    return tr + (sel ? detailRow(m, vs) : "");
+  }).join("");
+
+  $("lbTable").innerHTML = head + rows;
+  // wire header sort + row select
+  $("lbTable").querySelectorAll("th[data-k]").forEach(th => th.onclick = () => {
+    const k = th.dataset.k;
+    if (LB.sortKey === k) LB.sortDir = -LB.sortDir;
+    else { LB.sortKey = k; LB.sortDir = (k === "name" || k === "pos") ? 1 : -1; }
+    renderLbTable();
+  });
+  $("lbTable").querySelectorAll("tr.body").forEach(tr => tr.onclick = () => {
+    LB.sel = LB.sel === tr.dataset.n ? null : tr.dataset.n;
+    renderLbTable(); drawLbChart(); drawScatter();
+  });
+  $("btnShowAll").textContent = LB.showAll ? "上位のみ表示" : `すべて表示 (全${LB.models.length}戦略)`;
+}
+
+function detailRow(m, vs) {
+  const rows = [];
+  if (m.kind === "sma") rows.push(["パラメータ", `🔒 SMA ${m.window}日 / バンド ±${(m.band * 100).toFixed(1)}%`]);
+  else rows.push(["パラメータ", "🔒 LLM 日次1判断 (paper 専用)"]);
+  rows.push(["生リターン", `${m.return_pct >= 0 ? "+" : ""}${m.return_pct.toFixed(2)}% (手数料控除後)`]);
+  rows.push(["最大DD", `${(LB.dd[m.name] * 100).toFixed(1)}%`]);
+  rows.push(["vs 買い持ち", `${vs >= 0 ? "+" : ""}${vs.toFixed(2)} pt`]);
+  rows.push(["売買回数", `${m.trades || 0} 回`]);
+  rows.push(["売買手数料", yen(m.fees || 0)]);
+  if (m.kind === "llm") {
+    rows.push(["トークン代", `${(m.token_cost_jpy || 0).toFixed(1)} 円 (${((m.tok_in || 0) + (m.tok_out || 0)).toLocaleString()} tok)`]);
+    rows.push(["調整後資産", yen(m.adjusted_equity)]);
+  }
+  const body = rows.map(([k, v]) => `<div class="drow"><span>${k}</span><b>${v}</b></div>`).join("");
+  const rsn = (m.kind === "llm" && LB.reasons.llm) ? `<div class="rsn">💬 ${LB.reasons.llm}</div>` : "";
+  return `<tr class="detail"><td colspan="${LB_COLS.length}"><div class="detailbox">${body}${rsn}</div></td></tr>`;
+}
+
+// 100-rebased line chart, focus+context: selected/champion in colour, rest thin grey.
+function drawLbChart() {
+  const svg = $("lbChart"); svg.innerHTML = "";
+  const W = 360, H = 200, P = { t: 10, r: 8, b: 18, l: 8 };
+  const n = LB.dates.length;
+  if (n < 2) { svg.innerHTML = `<text x="180" y="100" fill="#8b949e" font-size="12" text-anchor="middle">データ蓄積中 — グラフは2日目から</text>`; return; }
+  const rebase = s => { const b = s.find(v => v != null); return b ? s.map(v => v == null ? null : 100 * v / b) : s; };
+  const focus = LB.sel || (LB.models.find(m => m.is_champion) || {}).name;
+  const lines = LB.models.map(m => ({ m, vals: rebase(LB.series[m.name]) }));
+  const benchVals = rebase(LB.benchSeries);
+  const all = [].concat(...lines.map(l => l.vals), benchVals).filter(v => v != null);
+  const lo = Math.min(...all) * 0.999, hi = Math.max(...all) * 1.001;
+  const x = i => P.l + (W - P.l - P.r) * i / (n - 1);
+  const y = v => P.t + (H - P.t - P.b) * (1 - (v - lo) / (hi - lo));
+  const path = vals => { let d = "", st = false; vals.forEach((v, i) => { if (v == null) return; d += `${st ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`; st = true; }); return d; };
+  // baseline 100
+  if (lo < 100 && hi > 100) svg.appendChild(svgEl("line", { x1: P.l, x2: W - P.r, y1: y(100), y2: y(100), stroke: "#21262d", "stroke-width": 1 }));
+  // benchmark (dashed grey)
+  svg.appendChild(svgEl("path", { d: path(benchVals), fill: "none", stroke: "#484f58", "stroke-width": 1.5, "stroke-dasharray": "4 4" }));
+  // context lines first (thin grey), then the focused line on top in colour
+  lines.filter(l => l.m.name !== focus).forEach(l =>
+    svg.appendChild(svgEl("path", { d: path(l.vals), fill: "none", stroke: "#30363d", "stroke-width": 1 })));
+  const f = lines.find(l => l.m.name === focus);
+  if (f) svg.appendChild(svgEl("path", { d: path(f.vals), fill: "none", stroke: modelColor(f.m), "stroke-width": 2.3, "stroke-linejoin": "round" }));
+  const lbl = (i, anchor) => { const t = svgEl("text", { x: x(i), y: H - 4, fill: "#8b949e", "font-size": 10, "text-anchor": anchor }); t.textContent = (LB.dates[i] || "").slice(5); svg.appendChild(t); };
+  lbl(0, "start"); lbl(n - 1, "end");
+}
+
+// Risk-return scatter: x = maxDD, y = adjusted return. Top-left is best.
+function drawScatter() {
+  const svg = $("lbScatter"); svg.innerHTML = "";
+  const W = 360, H = 210, P = { t: 14, r: 14, b: 26, l: 34 };
+  const pts = LB.models.map(m => ({ m, dd: (LB.dd[m.name] || 0) * 100, ret: m.adjusted_return_pct }));
+  if (LB.bench) pts.push({ bench: true, m: { name: "buyhold", label: LB.bench.label }, dd: (maxDD(LB.benchSeries) || 0) * 100, ret: LB.bench.return_pct });
+  const ddMax = Math.max(0.5, ...pts.map(p => p.dd)) * 1.15;
+  const rets = pts.map(p => p.ret);
+  const rLo = Math.min(0, ...rets) - 0.3, rHi = Math.max(0.3, ...rets) + 0.3;
+  const x = v => P.l + (W - P.l - P.r) * v / ddMax;
+  const y = v => P.t + (H - P.t - P.b) * (1 - (v - rLo) / (rHi - rLo));
+  // axes
+  svg.appendChild(svgEl("line", { x1: P.l, x2: W - P.r, y1: y(0), y2: y(0), stroke: "#21262d", "stroke-width": 1 }));
+  svg.appendChild(svgEl("line", { x1: P.l, x2: P.l, y1: P.t, y2: H - P.b, stroke: "#21262d", "stroke-width": 1 }));
+  const ax = svgEl("text", { x: W - P.r, y: H - 6, fill: "#8b949e", "font-size": 9, "text-anchor": "end" }); ax.textContent = "最大DD →"; svg.appendChild(ax);
+  const ay = svgEl("text", { x: 2, y: P.t, fill: "#8b949e", "font-size": 9, "text-anchor": "start" }); ay.textContent = "リターン↑"; svg.appendChild(ay);
+  const focus = LB.sel || (LB.models.find(m => m.is_champion) || {}).name;
+  pts.forEach(p => {
+    const lit = !p.bench && (p.m.name === focus);
+    const color = p.bench ? "#484f58" : modelColor(p.m);
+    const c = svgEl("circle", { cx: x(p.dd), cy: y(p.ret), r: lit ? 5.5 : 4, fill: lit ? color : (p.bench ? "none" : "#484f58"), stroke: p.bench ? "#484f58" : color, "stroke-width": p.bench ? 1.2 : (lit ? 0 : 1), "stroke-dasharray": p.bench ? "2 2" : "0" });
+    svg.appendChild(c);
+    const t = svgEl("text", { x: x(p.dd) + 7, y: y(p.ret) + 3, class: "scatlbl", fill: lit ? "#e6edf3" : "#8b949e" });
+    t.textContent = (p.m.is_champion ? "🏆" : "") + (p.m.name);
+    svg.appendChild(t);
+  });
 }
 
 async function loadAll() {
   toast("読み込み中…");
   try {
-    const [log, logAi, trades, tradesAi, varsRes, runs] = await Promise.all([
+    const [log, logAi, trades, tradesAi, leaderboard, varsRes, runs] = await Promise.all([
       ghFile("state/daily_log.json"),
       ghFile("state/daily_log_llm.json"),
       ghFile("state/trades.json"),
       ghFile("state/trades_llm.json"),
+      ghFile("state/strategies/leaderboard.json"),
       ghJson("/actions/variables?per_page=30").catch(() => ({ variables: [] })),
       ghJson("/actions/workflows/bot.yml/runs?per_page=1").catch(() => null),
     ]);
     const vars = {};
     for (const v of varsRes.variables || []) vars[v.name] = v.value;
-    render(log, logAi, trades, tradesAi, vars, runs && runs.workflow_runs && runs.workflow_runs[0]);
+    render(log, logAi, trades, tradesAi, vars, runs && runs.workflow_runs && runs.workflow_runs[0], leaderboard, logAi);
     toast("");
   } catch (e) {
     toast("読み込みエラー: " + e.message, true);
@@ -414,6 +749,7 @@ $("btnMode").onclick = () => guard(async () => {
   loadAll();
 });
 $("btnReload").onclick = loadAll;
+$("btnShowAll").onclick = () => { LB.showAll = !LB.showAll; renderLbTable(); };
 
 // ---------- setup / boot ----------
 function logout() {
